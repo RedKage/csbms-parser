@@ -78,36 +78,25 @@ namespace CSBMSParser
             {
                 return 0;
             }
-            int[] slane = new int[mode.scratchKey.Length / (side == 0 ? 1 : mode.player)];
-            for (int i = (side == 2 ? slane.Length : 0), index = 0; index < slane.Length; i++)
-            {
-                slane[index] = mode.scratchKey[i];
-                index++;
-            }
-            int[] nlane = new int[(mode.key - mode.scratchKey.Length) / (side == 0 ? 1 : mode.player)];
-            for (int i = 0, index = 0; index < nlane.Length; i++)
-            {
-                if (!mode.isScratchKey(i))
-                {
-                    nlane[index] = i;
-                    index++;
-                }
-            }
+            int[] slane = mode.GetScratchKeys(side);
+            int[] nlane = mode.GetNonScratchKeys(side);
 
             int count = 0;
+            int lntype = model.getLntype();
             foreach (TimeLine tl in model.getAllTimeLines())
             {
-                if (tl.getMilliTime() >= start && tl.getMilliTime() < end)
+                long time = tl.getMilliTime();
+                if (time >= start && time < end)
                 {
                     switch (type)
                     {
                         case TOTALNOTES_ALL:
-                            count += tl.getTotalNotes(model.getLntype());
+                            count += tl.getTotalNotes(lntype);
                             break;
                         case TOTALNOTES_KEY:
                             foreach (int lane in nlane)
                             {
-                                if (tl.existNote(lane) && (tl.getNote(lane) is NormalNote))
+                                if (tl.getNote(lane) is NormalNote)
                                 {
                                     count++;
                                 }
@@ -116,23 +105,16 @@ namespace CSBMSParser
                         case TOTALNOTES_LONG_KEY:
                             foreach (int lane in nlane)
                             {
-                                if (tl.existNote(lane) && (tl.getNote(lane) is LongNote))
+                                if (tl.getNote(lane) is LongNote ln && ShouldCountLongNote(ln, lntype))
                                 {
-                                    LongNote ln = (LongNote)tl.getNote(lane);
-                                    if (ln.getType() == LongNote.TYPE_CHARGENOTE
-                                            || ln.getType() == LongNote.TYPE_HELLCHARGENOTE
-                                            || (ln.getType() == LongNote.TYPE_UNDEFINED && model.getLntype() != BMSModel.LNTYPE_LONGNOTE)
-                                            || !ln.isEnd())
-                                    {
-                                        count++;
-                                    }
+                                    count++;
                                 }
                             }
                             break;
                         case TOTALNOTES_SCRATCH:
                             foreach (int lane in slane)
                             {
-                                if (tl.existNote(lane) && (tl.getNote(lane) is NormalNote))
+                                if (tl.getNote(lane) is NormalNote)
                                 {
                                     count++;
                                 }
@@ -141,30 +123,23 @@ namespace CSBMSParser
                         case TOTALNOTES_LONG_SCRATCH:
                             foreach (int lane in slane)
                             {
-                                var n = tl.getNote(lane);
-                                if (n is LongNote ln)
+                                if (tl.getNote(lane) is LongNote ln && ShouldCountLongNote(ln, lntype))
                                 {
-                                    if (ln.getType() == LongNote.TYPE_CHARGENOTE
-                                            || ln.getType() == LongNote.TYPE_HELLCHARGENOTE
-                                            || (ln.getType() == LongNote.TYPE_UNDEFINED && model.getLntype() != BMSModel.LNTYPE_LONGNOTE)
-                                            || !ln.isEnd())
-                                    {
-                                        count++;
-                                    }
+                                    count++;
                                 }
                             }
                             break;
                         case TOTALNOTES_MINE:
                             foreach (int lane in nlane)
                             {
-                                if (tl.existNote(lane) && (tl.getNote(lane) is MineNote))
+                                if (tl.getNote(lane) is MineNote)
                                 {
                                     count++;
                                 }
                             }
                             foreach (int lane in slane)
                             {
-                                if (tl.existNote(lane) && (tl.getNote(lane) is MineNote))
+                                if (tl.getNote(lane) is MineNote)
                                 {
                                     count++;
                                 }
@@ -174,6 +149,14 @@ namespace CSBMSParser
                 }
             }
             return count;
+        }
+
+        private static bool ShouldCountLongNote(LongNote ln, int lntype)
+        {
+            return ln.getType() == LongNote.TYPE_CHARGENOTE
+                || ln.getType() == LongNote.TYPE_HELLCHARGENOTE
+                || (ln.getType() == LongNote.TYPE_UNDEFINED && lntype != BMSModel.LNTYPE_LONGNOTE)
+                || !ln.isEnd();
         }
 
         public static double getAverageNotesPerTime(BMSModel model, int start, int end)
@@ -190,6 +173,7 @@ namespace CSBMSParser
                 tl.setStop((long)(tl.getMicroStop() / freq));
                 tl.setMicroTime((long)(tl.getMicroTime() / freq));
             }
+            model.InvalidateTimelineStats();
         }
 
         public static double getMaxNotesPerTime(BMSModel model, int range)

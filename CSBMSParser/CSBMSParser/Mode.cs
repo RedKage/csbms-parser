@@ -24,6 +24,10 @@ namespace CSBMSParser
 		 */
         public int[] scratchKey;
 
+        private readonly bool[] scratchKeyMap;
+        private readonly int[][] scratchKeysBySide;
+        private readonly int[][] nonScratchKeysBySide;
+
         Mode(int id, string hint, int player, int key, int[] scratchKey)
         {
             this.id = id;
@@ -31,6 +35,22 @@ namespace CSBMSParser
             this.player = player;
             this.key = key;
             this.scratchKey = scratchKey;
+            scratchKeyMap = new bool[key];
+            foreach (int sc in scratchKey)
+            {
+                if ((uint)sc < (uint)scratchKeyMap.Length)
+                {
+                    scratchKeyMap[sc] = true;
+                }
+            }
+
+            scratchKeysBySide = new int[3][];
+            nonScratchKeysBySide = new int[3][];
+            for (int side = 0; side < scratchKeysBySide.Length; side++)
+            {
+                scratchKeysBySide[side] = BuildScratchKeys(side);
+                nonScratchKeysBySide[side] = BuildNonScratchKeys(side);
+            }
         }
 
 
@@ -42,14 +62,54 @@ namespace CSBMSParser
          */
         public bool isScratchKey(int key)
         {
-            foreach (int sc in scratchKey)
+            return (uint)key < (uint)scratchKeyMap.Length && scratchKeyMap[key];
+        }
+
+        internal int[] GetScratchKeys(int side)
+        {
+            return (uint)side < (uint)scratchKeysBySide.Length ? scratchKeysBySide[side] : scratchKeysBySide[0];
+        }
+
+        internal int[] GetNonScratchKeys(int side)
+        {
+            return (uint)side < (uint)nonScratchKeysBySide.Length ? nonScratchKeysBySide[side] : nonScratchKeysBySide[0];
+        }
+
+        private int[] BuildScratchKeys(int side)
+        {
+            if (side == 2 && player == 1)
             {
-                if (key == sc)
+                return Array.Empty<int>();
+            }
+
+            int count = scratchKey.Length / (side == 0 ? 1 : player);
+            int[] result = new int[count];
+            int start = side == 2 ? count : 0;
+            for (int i = 0; i < result.Length; i++)
+            {
+                result[i] = scratchKey[start + i];
+            }
+            return result;
+        }
+
+        private int[] BuildNonScratchKeys(int side)
+        {
+            if (side == 2 && player == 1)
+            {
+                return Array.Empty<int>();
+            }
+
+            int count = (key - scratchKey.Length) / (side == 0 ? 1 : player);
+            int[] result = new int[count];
+            for (int i = 0, index = 0; index < result.Length; i++)
+            {
+                if (!isScratchKey(i))
                 {
-                    return true;
+                    result[index] = i;
+                    index++;
                 }
             }
-            return false;
+            return result;
         }
 
 

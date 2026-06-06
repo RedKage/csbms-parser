@@ -122,6 +122,101 @@ public class BmsP1ModelBenchmarks
 }
 
 [MemoryDiagnoser]
+public class BmsR2P1ModelBenchmarks
+{
+    private byte[] data = Array.Empty<byte>();
+    private Encoding encoding = Encoding.UTF8;
+    private BMSModel model = new();
+
+    static BmsR2P1ModelBenchmarks()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        Logger.Instance = SilentLogger.Shared;
+    }
+
+    [Params("Lapras_A.bml", "AF_7KSHD.bms", "_ANOTHER.bms", "tetrinet_5.bms")]
+    public string FixtureName { get; set; } = "Lapras_A.bml";
+
+    [GlobalSetup]
+    public void GlobalSetup()
+    {
+        encoding = Encoding.GetEncoding("Shift-JIS");
+
+        string fixturePath = Path.Combine(AppContext.BaseDirectory, "Fixtures", FixtureName);
+        data = File.ReadAllBytes(fixturePath);
+        model = DecodeFixture();
+
+        if (model == null || model.getAllTimeLines().Length == 0)
+        {
+            throw new InvalidOperationException($"Fixture '{FixtureName}' did not decode into any timelines.");
+        }
+    }
+
+    [Benchmark]
+    public double GetMinMaxBpm()
+    {
+        return model.getMinBPM() + model.getMaxBPM();
+    }
+
+    [Benchmark]
+    public long GetLastTimes()
+    {
+        return model.getLastMilliTime()
+            + model.getLastNoteMilliTime()
+            + model.getLastTime()
+            + model.getLastNoteTime();
+    }
+
+    [Benchmark]
+    public int ContainsFlags()
+    {
+        int flags = 0;
+        flags |= model.containsUndefinedLongNote() ? 1 : 0;
+        flags |= model.containsLongNote() ? 2 : 0;
+        flags |= model.containsMineNote() ? 4 : 0;
+        return flags;
+    }
+
+    [Benchmark]
+    public long BuildAllTimes()
+    {
+        long[] times = model.getAllTimes();
+        if (times.Length == 0)
+        {
+            return 0;
+        }
+
+        return times.Length + times[0] + times[times.Length - 1];
+    }
+
+    [Benchmark]
+    public int TotalNotesAllAndTyped()
+    {
+        return model.getTotalNotes()
+            + BMSModelUtils.getTotalNotes(model, BMSModelUtils.TOTALNOTES_KEY)
+            + BMSModelUtils.getTotalNotes(model, BMSModelUtils.TOTALNOTES_LONG_KEY)
+            + BMSModelUtils.getTotalNotes(model, BMSModelUtils.TOTALNOTES_SCRATCH)
+            + BMSModelUtils.getTotalNotes(model, BMSModelUtils.TOTALNOTES_LONG_SCRATCH)
+            + BMSModelUtils.getTotalNotes(model, BMSModelUtils.TOTALNOTES_MINE);
+    }
+
+    [Benchmark]
+    public int TotalNotesWindow()
+    {
+        int last = model.getLastTime();
+        int midpoint = last > 0 ? last / 2 : int.MaxValue;
+        return BMSModelUtils.getTotalNotes(model, 0, midpoint, BMSModelUtils.TOTALNOTES_ALL)
+            + BMSModelUtils.getTotalNotes(model, midpoint, int.MaxValue, BMSModelUtils.TOTALNOTES_ALL);
+    }
+
+    private BMSModel DecodeFixture()
+    {
+        var decoder = new BMSDecoder();
+        return decoder.decode(data, ispms: false, random: null, encoding);
+    }
+}
+
+[MemoryDiagnoser]
 public class BmsR2P0DecodeBenchmarks
 {
     private const int RandomBlocks = 360;

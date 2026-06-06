@@ -106,6 +106,14 @@ namespace CSBMSParser
 		 * 時間とTimeLineのマッピング
 		 */
         private TimeLine[] timelines = new TimeLine[0];
+        private bool timelineStatsValid;
+        private double minBpmCache;
+        private double maxBpmCache;
+        private long lastMilliTimeCache;
+        private long lastNoteMilliTimeCache;
+        private bool containsUndefinedLongNoteCache;
+        private bool containsLongNoteCache;
+        private bool containsMineNoteCache;
 
         private ChartInformation info;
 
@@ -224,6 +232,7 @@ namespace CSBMSParser
         {
             ;
             this.bpm = bpm;
+            InvalidateTimelineStats();
         }
 
         public string getPlaylevel()
@@ -268,29 +277,20 @@ namespace CSBMSParser
 
         public double getMinBPM()
         {
-            double bpm = this.getBpm();
-            foreach (TimeLine time in timelines)
-            {
-                var d = time.getBPM();
-                bpm = (bpm <= d) ? bpm : d;
-            }
-            return bpm;
+            EnsureTimelineStats();
+            return minBpmCache;
         }
 
         public double getMaxBPM()
         {
-            double bpm = this.getBpm();
-            foreach (TimeLine time in timelines)
-            {
-                var d = time.getBPM();
-                bpm = (bpm >= d) ? bpm : d;
-            }
-            return bpm;
+            EnsureTimelineStats();
+            return maxBpmCache;
         }
 
         public void setAllTimeLine(TimeLine[] timelines)
         {
             this.timelines = timelines;
+            InvalidateTimelineStats();
         }
 
         public TimeLine[] getAllTimeLines()
@@ -316,21 +316,8 @@ namespace CSBMSParser
 
         public long getLastMilliTime()
         {
-            var keys = mode.key;
-            for (int i = timelines.Length - 1; i >= 0; i--)
-            {
-                TimeLine tl = timelines[i];
-                for (int lane = 0; lane < keys; lane++)
-                {
-                    if (tl.existNote(lane) || tl.getHiddenNote(lane) != null
-                            || tl.getBackGroundNotes().Count > 0 || tl.getBGA() != -1
-                            || tl.getLayer() != -1)
-                    {
-                        return tl.getMilliTime();
-                    }
-                }
-            }
-            return 0;
+            EnsureTimelineStats();
+            return lastMilliTimeCache;
         }
 
         public int getLastNoteTime()
@@ -340,19 +327,8 @@ namespace CSBMSParser
 
         public long getLastNoteMilliTime()
         {
-            var keys = mode.key;
-            for (int i = timelines.Length - 1; i >= 0; i--)
-            {
-                var tl = timelines[i];
-                for (int lane = 0; lane < keys; lane++)
-                {
-                    if (tl.existNote(lane))
-                    {
-                        return tl.getMilliTime();
-                    }
-                }
-            }
-            return 0;
+            EnsureTimelineStats();
+            return lastNoteMilliTimeCache;
         }
 
         public int getDifficulty()
@@ -407,6 +383,7 @@ namespace CSBMSParser
             {
                 tl.setLaneCount(mode.key);
             }
+            InvalidateTimelineStats();
         }
 
         public Mode getMode()
@@ -496,51 +473,20 @@ namespace CSBMSParser
 
         public bool containsUndefinedLongNote()
         {
-            var keys = mode.key;
-            foreach (TimeLine tl in timelines)
-            {
-                for (int i = 0; i < keys; i++)
-                {
-                    if (tl.getNote(i) != null && tl.getNote(i) is LongNote
-                        && ((LongNote)tl.getNote(i)).getType() == LongNote.TYPE_UNDEFINED)
-                    {
-                        return true;
-                    }
-                }
-            }
-            return false;
+            EnsureTimelineStats();
+            return containsUndefinedLongNoteCache;
         }
 
         public bool containsLongNote()
         {
-            var keys = mode.key;
-            foreach (TimeLine tl in timelines)
-            {
-                for (int i = 0; i < keys; i++)
-                {
-                    if (tl.getNote(i) is LongNote)
-                    {
-                        return true;
-                    }
-                }
-            }
-            return false;
+            EnsureTimelineStats();
+            return containsLongNoteCache;
         }
 
         public bool containsMineNote()
         {
-            var keys = mode.key;
-            foreach (TimeLine tl in timelines)
-            {
-                for (int i = 0; i < keys; i++)
-                {
-                    if (tl.getNote(i) is MineNote)
-                    {
-                        return true;
-                    }
-                }
-            }
-            return false;
+            EnsureTimelineStats();
+            return containsMineNoteCache;
         }
 
         public string getPreview()
@@ -735,6 +681,95 @@ namespace CSBMSParser
         public void setTotalType(TotalType totalType)
         {
             this.totalType = totalType;
+        }
+
+        internal void InvalidateTimelineStats()
+        {
+            timelineStatsValid = false;
+        }
+
+        private void EnsureTimelineStats()
+        {
+            if (!timelineStatsValid)
+            {
+                RebuildTimelineStats();
+            }
+        }
+
+        private void RebuildTimelineStats()
+        {
+            double minBpm = bpm;
+            double maxBpm = bpm;
+            long lastMilliTime = 0;
+            long lastNoteMilliTime = 0;
+            bool foundLastMilliTime = false;
+            bool foundLastNoteMilliTime = false;
+            bool containsUndefinedLongNote = false;
+            bool containsLongNote = false;
+            bool containsMineNote = false;
+
+            for (int i = timelines.Length - 1; i >= 0; i--)
+            {
+                TimeLine tl = timelines[i];
+                double timelineBpm = tl.getBPM();
+                minBpm = (minBpm <= timelineBpm) ? minBpm : timelineBpm;
+                maxBpm = (maxBpm >= timelineBpm) ? maxBpm : timelineBpm;
+
+                int keys = mode != null ? mode.key : tl.getLaneCount();
+                if (keys > tl.getLaneCount())
+                {
+                    keys = tl.getLaneCount();
+                }
+
+                bool hasLaneEvent = false;
+                for (int lane = 0; lane < keys; lane++)
+                {
+                    Note note = tl.getNote(lane);
+                    if (note != null)
+                    {
+                        hasLaneEvent = true;
+                        if (!foundLastNoteMilliTime)
+                        {
+                            lastNoteMilliTime = tl.getMilliTime();
+                            foundLastNoteMilliTime = true;
+                        }
+
+                        if (note is LongNote ln)
+                        {
+                            containsLongNote = true;
+                            if (ln.getType() == LongNote.TYPE_UNDEFINED)
+                            {
+                                containsUndefinedLongNote = true;
+                            }
+                        }
+                        else if (note is MineNote)
+                        {
+                            containsMineNote = true;
+                        }
+                    }
+
+                    if (tl.getHiddenNote(lane) != null)
+                    {
+                        hasLaneEvent = true;
+                    }
+                }
+
+                if (!foundLastMilliTime
+                    && (hasLaneEvent || tl.getBackGroundNotes().Count > 0 || tl.getBGA() != -1 || tl.getLayer() != -1))
+                {
+                    lastMilliTime = tl.getMilliTime();
+                    foundLastMilliTime = true;
+                }
+            }
+
+            minBpmCache = minBpm;
+            maxBpmCache = maxBpm;
+            lastMilliTimeCache = lastMilliTime;
+            lastNoteMilliTimeCache = lastNoteMilliTime;
+            containsUndefinedLongNoteCache = containsUndefinedLongNote;
+            containsLongNoteCache = containsLongNote;
+            containsMineNoteCache = containsMineNote;
+            timelineStatsValid = true;
         }
 
         public enum JudgeRankType
