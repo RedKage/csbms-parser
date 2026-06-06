@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <ProjectReference Include="..\CSBMSParser\CSBMSParser.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Fixtures\**\*.bms" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\**\*.bml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
