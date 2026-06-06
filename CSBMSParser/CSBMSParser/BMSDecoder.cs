@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Linq;
 using System.IO;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using CSBMSParser.Bases;
 
@@ -39,12 +40,12 @@ namespace CSBMSParser
             Logger.getGlobal().fine("BMSファイル解析開始 :" + f);
             try
             {
-                BMSModel model = this.decode(f, File.ReadAllBytes(f), f.ToLower().EndsWith(".pms"), null, encoding);
+                BMSModel model = this.decode(f, File.ReadAllBytes(f), f.EndsWith(".pms", StringComparison.OrdinalIgnoreCase), null, encoding);
                 if (model == null)
                 {
                     return null;
                 }
-                Logger.getGlobal().fine("BMSファイル解析完了 :" + f + " - TimeLine数:" + model.getAllTimes().Length);
+                Logger.getGlobal().fine("BMSファイル解析完了 :" + f + " - TimeLine数:" + model.getAllTimeLines().Length);
                 return model;
             }
             catch (IOException e)
@@ -60,7 +61,7 @@ namespace CSBMSParser
             try
             {
                 this.lntype = info.lntype;
-                return decode(info.path, File.ReadAllBytes(info.path), info.path.ToLower().EndsWith(".pms"), info.selectedRandoms, info.encoding);
+                return decode(info.path, File.ReadAllBytes(info.path), info.path.EndsWith(".pms", StringComparison.OrdinalIgnoreCase), info.selectedRandoms, info.encoding);
             }
             catch (IOException e)
             {
@@ -101,7 +102,7 @@ namespace CSBMSParser
         private BMSModel decode(string path, byte[] data, bool ispms, int[] selectedRandom, Encoding encoding)
         {
             log.Clear();
-            var time = (DateTime.Now.ToUniversalTime().Ticks - 621355968000000000) / 10000000;
+            var startTimestamp = Stopwatch.GetTimestamp();
             BMSModel model = new BMSModel();
             scrolltable.Clear();
             stoptable.Clear();
@@ -149,23 +150,30 @@ namespace CSBMSParser
                         // RANDOM制御系
                         if (matchesReserveWord(line, "RANDOM"))
                         {
-                            try
-                            {
-                                var r = int.Parse(line.substring(8).Trim());
-                                randoms.Add(r);
-                                if (selectedRandom != null)
-                                {
-                                    crandom.Add(selectedRandom[randoms.Count - 1]);
-                                }
-                                else
-                                {
-                                    crandom.Add((int)(new Random().NextDouble() * r) + 1);
-                                    srandoms.Add(crandom.GetLast());
-                                }
-                            }
-                            catch (Exception e)
+                            var arg = line.substring(8).Trim();
+                            if (!int.TryParse(arg, out var r))
                             {
                                 log.Add(new DecodeLog(DecodeLog.State.WARNING, "#RANDOMに数字が定義されていません"));
+                            }
+                            else
+                            {
+                                try
+                                {
+                                    randoms.Add(r);
+                                    if (selectedRandom != null)
+                                    {
+                                        crandom.Add(selectedRandom[randoms.Count - 1]);
+                                    }
+                                    else
+                                    {
+                                        crandom.Add((int)(new Random().NextDouble() * r) + 1);
+                                        srandoms.Add(crandom.GetLast());
+                                    }
+                                }
+                                catch (Exception)
+                                {
+                                    log.Add(new DecodeLog(DecodeLog.State.WARNING, "#RANDOMに数字が定義されていません"));
+                                }
                             }
                         }
                         else if (matchesReserveWord(line, "IF"))
@@ -173,11 +181,11 @@ namespace CSBMSParser
                             // RANDOM分岐開始
                             if (!crandom.IsEmpty())
                             {
-                                try
+                                if (int.TryParse(line.substring(4).Trim(), out var branch))
                                 {
-                                    skip.Add((crandom.Last() != int.Parse(line.substring(4).Trim())));
+                                    skip.Add(crandom.Last() != branch);
                                 }
-                                catch (Exception e)
+                                else
                                 {
                                     log.Add(new DecodeLog(DecodeLog.State.WARNING, "#IFに数字が定義されていません"));
                                 }
@@ -239,10 +247,9 @@ namespace CSBMSParser
                                 if (line[(4)] == ' ')
                                 {
                                     // BPMは小数点のケースがある(FREEDOM DiVE)
-                                    try
+                                    var arg = line.substring(5).Trim();
+                                    if (double.TryParse(arg, out var bpm))
                                     {
-                                        var arg = line.substring(5).Trim();
-                                        double bpm = double.Parse(arg);
                                         if (bpm > 0)
                                         {
                                             model.setBpm(bpm);
@@ -252,26 +259,32 @@ namespace CSBMSParser
                                             log.Add(new DecodeLog(DecodeLog.State.WARNING, "#negative BPMはサポートされていません : " + line));
                                         }
                                     }
-                                    catch (Exception e)
+                                    else
                                     {
                                         log.Add(new DecodeLog(DecodeLog.State.WARNING, "#BPMに数字が定義されていません : " + line));
                                     }
                                 }
                                 else
                                 {
-                                    try
+                                    if (double.TryParse(line.substring(7).Trim(), out var bpm))
                                     {
-                                        double bpm = double.Parse(line.substring(7).Trim());
                                         if (bpm > 0)
                                         {
-                                            bpmtable.Add(ChartDecoder.parseInt36(line, 4), bpm);
+                                            try
+                                            {
+                                                bpmtable.Add(ChartDecoder.parseInt36(line, 4), bpm);
+                                            }
+                                            catch (Exception)
+                                            {
+                                                log.Add(new DecodeLog(DecodeLog.State.WARNING, "#BPMxxに数字が定義されていません : " + line));
+                                            }
                                         }
                                         else
                                         {
                                             log.Add(new DecodeLog(DecodeLog.State.WARNING, "#negative BPMはサポートされていません : " + line));
                                         }
                                     }
-                                    catch (Exception e)
+                                    else
                                     {
                                         log.Add(new DecodeLog(DecodeLog.State.WARNING, "#BPMxxに数字が定義されていません : " + line));
                                     }
@@ -282,13 +295,14 @@ namespace CSBMSParser
                                 // 音源ファイル
                                 if (line.Length >= 8)
                                 {
-                                    try
+                                    var key = ChartDecoder.parseInt36(line[4], line[5]);
+                                    if (key >= 0)
                                     {
-                                        var file_name = line.substring(7).Trim().Replace('\\', '/');
-                                        wm[ChartDecoder.parseInt36(line, 4)] = wavlist.Count;
+                                        var file_name = NormalizePath(line.substring(7).Trim());
+                                        wm[key] = wavlist.Count;
                                         wavlist.Add(file_name);
                                     }
-                                    catch (Exception e)
+                                    else
                                     {
                                         log.Add(new DecodeLog(DecodeLog.State.WARNING, "#WAVxxは不十分な定義です : " + line));
                                     }
@@ -303,13 +317,14 @@ namespace CSBMSParser
                                 // BGAファイル
                                 if (line.Length >= 8)
                                 {
-                                    try
+                                    var key = ChartDecoder.parseInt36(line[4], line[5]);
+                                    if (key >= 0)
                                     {
-                                        var file_name = line.substring(7).Trim().Replace('\\', '/');
-                                        bm[ChartDecoder.parseInt36(line, 4)] = bgalist.Count;
+                                        var file_name = NormalizePath(line.substring(7).Trim());
+                                        bm[key] = bgalist.Count;
                                         bgalist.Add(file_name);
                                     }
-                                    catch (Exception e)
+                                    else
                                     {
                                         log.Add(new DecodeLog(DecodeLog.State.WARNING, "#WAVxxは不十分な定義です : " + line));
                                     }
@@ -323,17 +338,24 @@ namespace CSBMSParser
                             {
                                 if (line.Length >= 9)
                                 {
-                                    try
+                                    if (double.TryParse(line.substring(8).Trim(), out var stop))
                                     {
-                                        double stop = double.Parse(line.substring(8).Trim()) / 192;
+                                        stop /= 192;
                                         if (stop < 0)
                                         {
                                             stop = Math.Abs(stop);
                                             log.Add(new DecodeLog(DecodeLog.State.WARNING, "#negative STOPはサポートされていません : " + line));
                                         }
-                                        stoptable.Add(ChartDecoder.parseInt36(line, 5), stop);
+                                        try
+                                        {
+                                            stoptable.Add(ChartDecoder.parseInt36(line, 5), stop);
+                                        }
+                                        catch (Exception)
+                                        {
+                                            log.Add(new DecodeLog(DecodeLog.State.WARNING, "#STOPxxに数字が定義されていません : " + line));
+                                        }
                                     }
-                                    catch (Exception e)
+                                    else
                                     {
                                         log.Add(new DecodeLog(DecodeLog.State.WARNING, "#STOPxxに数字が定義されていません : " + line));
                                     }
@@ -347,12 +369,18 @@ namespace CSBMSParser
                             {
                                 if (line.Length >= 11)
                                 {
-                                    try
+                                    if (double.TryParse(line.substring(10).Trim(), out var scroll))
                                     {
-                                        double scroll = double.Parse(line.substring(10).Trim());
-                                        scrolltable.Add(ChartDecoder.parseInt36(line, 7), scroll);
+                                        try
+                                        {
+                                            scrolltable.Add(ChartDecoder.parseInt36(line, 7), scroll);
+                                        }
+                                        catch (Exception)
+                                        {
+                                            log.Add(new DecodeLog(DecodeLog.State.WARNING, "#SCROLLxxに数字が定義されていません : " + line));
+                                        }
                                     }
-                                    catch (Exception e)
+                                    else
                                     {
                                         log.Add(new DecodeLog(DecodeLog.State.WARNING, "#SCROLLxxに数字が定義されていません : " + line));
                                     }
@@ -364,18 +392,15 @@ namespace CSBMSParser
                             }
                             else
                             {
-                                foreach (var cw in CommandWord.values)
+                                if (!TryExecuteCommandWord(model, line))
                                 {
-                                    if (line.Length > cw.Key.Length + 2 && matchesReserveWord(line, cw.Key))
+                                    foreach (var cw in CommandWord.values)
                                     {
-                                        DecodeLog log = cw.Value.execute(model, line.substring(cw.Key.Length + 2).Trim());
-                                        if (log != null)
+                                        if (line.Length > cw.Key.Length + 2 && matchesReserveWord(line, cw.Key))
                                         {
-                                            this.log.Add(log);
-                                            Logger.getGlobal()
-                                                    .warning(model.getTitle() + " - " + log.getMessage() + " : " + line);
+                                            ExecuteCommandWord(model, line, cw.Value, line.substring(cw.Key.Length + 2).Trim());
+                                            break;
                                         }
-                                        break;
                                     }
                                 }
                             }
@@ -476,13 +501,13 @@ namespace CSBMSParser
                     log.Add(new DecodeLog(DecodeLog.State.WARNING, "#PLAYER定義が1にもかかわらず2P側のノーツ定義が存在します"));
                 }
 
-                var md5 = MD5.Create();
-                var sha256 = SHA256.Create();
+                using var md5 = MD5.Create();
+                using var sha256 = SHA256.Create();
 
                 model.setMD5(convertHexString(md5.ComputeHash(data)));
                 model.setSHA256(convertHexString(sha256.ComputeHash(data)));
                 log.Add(new DecodeLog(DecodeLog.State.INFO, "#PLAYER定義が1にもかかわらず2P側のノーツ定義が存在します"));
-                Logger.getGlobal().fine("BMSデータ解析時間(ms) :" + ((DateTime.Now.ToUniversalTime().Ticks - 621355968000000000) / 10000000 - time));
+                Logger.getGlobal().fine("BMSデータ解析時間(ms) :" + Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds);
 
                 if (selectedRandom == null)
                 {
@@ -526,6 +551,48 @@ namespace CSBMSParser
             return true;
         }
 
+        private bool TryExecuteCommandWord(BMSModel model, string line)
+        {
+            int separatorIndex = -1;
+            for (int i = 1; i < line.Length; i++)
+            {
+                if (char.IsWhiteSpace(line[i]))
+                {
+                    separatorIndex = i;
+                    break;
+                }
+            }
+
+            if (separatorIndex <= 1 || line.Length <= separatorIndex + 1)
+            {
+                return false;
+            }
+
+            string command = line.Substring(1, separatorIndex - 1);
+            if (!CommandWord.values.TryGetValue(command, out var commandWord))
+            {
+                return false;
+            }
+
+            ExecuteCommandWord(model, line, commandWord, line.Substring(separatorIndex + 1).Trim());
+            return true;
+        }
+
+        private void ExecuteCommandWord(BMSModel model, string line, CommandWord commandWord, string arg)
+        {
+            DecodeLog log = commandWord.execute(model, arg);
+            if (log != null)
+            {
+                this.log.Add(log);
+                Logger.getGlobal().warning(model.getTitle() + " - " + log.getMessage() + " : " + line);
+            }
+        }
+
+        internal static string NormalizePath(string value)
+        {
+            return value.IndexOf('\\') >= 0 ? value.Replace('\\', '/') : value;
+        }
+
         /**
          * バイトデータを16進数文字列表現に変換する
          * 
@@ -535,12 +602,7 @@ namespace CSBMSParser
          */
         public static string convertHexString(byte[] data)
         {
-            var sb = new StringBuilder(data.Length * 2);
-            foreach (byte b in data)
-            {
-                sb.Append(b.ToString("X2"));
-            }
-            return sb.ToString();
+            return Convert.ToHexString(data);
         }
     }
 
@@ -550,14 +612,11 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                try
-                {
-                    model.setPlayer(int.Parse(arg));
-                }
-                catch (FormatException e)
+                if (!int.TryParse(arg, out var player))
                 {
                     return new DecodeLog(DecodeLog.State.WARNING, "#PLAYERに数字が定義されていません");
                 }
+                model.setPlayer(player);
                 return null;
             }
         };
@@ -613,22 +672,18 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                try
-                {
-                    var rank = int.Parse(arg);
-                    if (rank >= 0 && rank < 5)
-                    {
-                        model.setJudgerank(rank);
-                        model.setJudgerankType(BMSModel.JudgeRankType.BMS_RANK);
-                    }
-                    else
-                    {
-                        return new DecodeLog(DecodeLog.State.WARNING, "#RANKに規定外の数字が定義されています : " + rank);
-                    }
-                }
-                catch (FormatException e)
+                if (!int.TryParse(arg, out var rank))
                 {
                     return new DecodeLog(DecodeLog.State.WARNING, "#RANKに数字が定義されていません");
+                }
+                if (rank >= 0 && rank < 5)
+                {
+                    model.setJudgerank(rank);
+                    model.setJudgerankType(BMSModel.JudgeRankType.BMS_RANK);
+                }
+                else
+                {
+                    return new DecodeLog(DecodeLog.State.WARNING, "#RANKに規定外の数字が定義されています : " + rank);
                 }
                 return null;
             }
@@ -637,22 +692,18 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                try
-                {
-                    var rank = int.Parse(arg);
-                    if (rank >= 1)
-                    {
-                        model.setJudgerank(rank);
-                        model.setJudgerankType(BMSModel.JudgeRankType.BMS_DEFEXRANK);
-                    }
-                    else
-                    {
-                        return new DecodeLog(DecodeLog.State.WARNING, "#DEFEXRANK 1以下はサポートしていません" + rank);
-                    }
-                }
-                catch (FormatException e)
+                if (!int.TryParse(arg, out var rank))
                 {
                     return new DecodeLog(DecodeLog.State.WARNING, "#DEFEXRANKに数字が定義されていません");
+                }
+                if (rank >= 1)
+                {
+                    model.setJudgerank(rank);
+                    model.setJudgerankType(BMSModel.JudgeRankType.BMS_DEFEXRANK);
+                }
+                else
+                {
+                    return new DecodeLog(DecodeLog.State.WARNING, "#DEFEXRANK 1以下はサポートしていません" + rank);
                 }
                 return null;
             }
@@ -661,22 +712,18 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                try
-                {
-                    var total = double.Parse(arg);
-                    if (total > 0)
-                    {
-                        model.setTotal(total);
-                        model.setTotalType(BMSModel.TotalType.BMS);
-                    }
-                    else
-                    {
-                        return new DecodeLog(DecodeLog.State.WARNING, "#TOTALが0以下です");
-                    }
-                }
-                catch (FormatException e)
+                if (!double.TryParse(arg, out var total))
                 {
                     return new DecodeLog(DecodeLog.State.WARNING, "#TOTALに数字が定義されていません");
+                }
+                if (total > 0)
+                {
+                    model.setTotal(total);
+                    model.setTotalType(BMSModel.TotalType.BMS);
+                }
+                else
+                {
+                    return new DecodeLog(DecodeLog.State.WARNING, "#TOTALが0以下です");
                 }
                 return null;
             }
@@ -685,14 +732,11 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                try
-                {
-                    model.setVolwav(int.Parse(arg));
-                }
-                catch (FormatException e)
+                if (!int.TryParse(arg, out var volwav))
                 {
                     return new DecodeLog(DecodeLog.State.WARNING, "#VOLWAVに数字が定義されていません");
                 }
+                model.setVolwav(volwav);
                 return null;
             }
         };
@@ -700,7 +744,7 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                model.setStagefile(arg.Replace('\\', '/'));
+                model.setStagefile(BMSDecoder.NormalizePath(arg));
                 return null;
             }
         };
@@ -708,7 +752,7 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                model.setBackbmp(arg.Replace('\\', '/'));
+                model.setBackbmp(BMSDecoder.NormalizePath(arg));
                 return null;
             }
         };
@@ -716,7 +760,7 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                model.setPreview(arg.Replace('\\', '/'));
+                model.setPreview(BMSDecoder.NormalizePath(arg));
                 return null;
             }
         };
@@ -734,7 +778,7 @@ namespace CSBMSParser
                     }
                     model.setLnobj(num);
                 }
-                catch (FormatException e)
+                catch (FormatException)
                 {
                     return new DecodeLog(DecodeLog.State.WARNING, "#PLAYERに数字が定義されていません");
                 }
@@ -745,19 +789,15 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                try
-                {
-                    int lnmode = int.Parse(arg);
-                    if (lnmode < 0 || lnmode > 3)
-                    {
-                        return new DecodeLog(DecodeLog.State.WARNING, "#LNMODEに無効な数字が定義されています");
-                    }
-                    model.setLnmode(lnmode);
-                }
-                catch (FormatException e)
+                if (!int.TryParse(arg, out var lnmode))
                 {
                     return new DecodeLog(DecodeLog.State.WARNING, "#PLAYERに数字が定義されていません");
                 }
+                if (lnmode < 0 || lnmode > 3)
+                {
+                    return new DecodeLog(DecodeLog.State.WARNING, "#LNMODEに無効な数字が定義されています");
+                }
+                model.setLnmode(lnmode);
                 return null;
             }
         };
@@ -765,14 +805,11 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                try
-                {
-                    model.setDifficulty(int.Parse(arg));
-                }
-                catch (FormatException e)
+                if (!int.TryParse(arg, out var difficulty))
                 {
                     return new DecodeLog(DecodeLog.State.WARNING, "#DIFFICULTYに数字が定義されていません");
                 }
+                model.setDifficulty(difficulty);
                 return null;
             }
         };
@@ -780,7 +817,7 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                model.setBanner(arg.Replace('\\', '/'));
+                model.setBanner(BMSDecoder.NormalizePath(arg));
                 return null;
             }
         };
@@ -793,7 +830,7 @@ namespace CSBMSParser
             }
         };
 
-        public static readonly Dictionary<string, CommandWord> Enums = new Dictionary<string, CommandWord>()
+        public static readonly Dictionary<string, CommandWord> Enums = new Dictionary<string, CommandWord>(StringComparer.OrdinalIgnoreCase)
         {
             ["PLAYER"] = PLAYER,
             ["GENRE"] = GENRE,

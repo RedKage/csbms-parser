@@ -50,12 +50,15 @@ namespace CSBMSParser
 		 */
         public static ChartDecoder getDecoder(string p)
         {
-            var s = Path.GetFileName(p).ToLower();
-            if (s.EndsWith(".bms") || s.EndsWith(".bme") || s.EndsWith(".bml") || s.EndsWith(".pms"))
+            var s = Path.GetFileName(p);
+            if (s.EndsWith(".bms", StringComparison.OrdinalIgnoreCase)
+                || s.EndsWith(".bme", StringComparison.OrdinalIgnoreCase)
+                || s.EndsWith(".bml", StringComparison.OrdinalIgnoreCase)
+                || s.EndsWith(".pms", StringComparison.OrdinalIgnoreCase))
             {
                 return new BMSDecoder(BMSModel.LNTYPE_LONGNOTE);
             }
-            else if (s.EndsWith(".bmson"))
+            else if (s.EndsWith(".bmson", StringComparison.OrdinalIgnoreCase))
             {
                 return new BMSONDecoder(BMSModel.LNTYPE_LONGNOTE);
             }

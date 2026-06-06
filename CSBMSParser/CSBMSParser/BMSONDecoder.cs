@@ -53,7 +53,7 @@ namespace CSBMSParser
                 bmson = JsonConvert.DeserializeObject<Bmson.Bmson>(text);
                 model.setSHA256(BMSDecoder.convertHexString(digest.ComputeHash(data)));
             }
-            catch (Exception e)
+            catch (Exception)
             {
 
                 return null;

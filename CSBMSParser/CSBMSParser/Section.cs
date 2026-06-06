@@ -93,7 +93,7 @@ namespace CSBMSParser
                         {
                             rate = double.Parse(line.substring(colon_index + 1, line.Length));
                         }
-                        catch (Exception e)
+                        catch (Exception)
                         {
                             log.Add(new DecodeLog(DecodeLog.State.WARNING, "小節の拡大率が不正です : " + line));
                         }
