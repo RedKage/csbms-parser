@@ -20,30 +20,56 @@ namespace CSBMSParser
 
         public EventLane(BMSModel model)
         {
-            var section = new Queue<TimeLine>();
-            var bpm = new Queue<TimeLine>();
-            var stop = new Queue<TimeLine>();
+            TimeLine[] timelines = model.getAllTimeLines();
+            int sectionCount = 0;
+            int bpmCount = 0;
+            int stopCount = 0;
 
             TimeLine prev = null;
-            foreach (TimeLine tl in model.getAllTimeLines())
+            foreach (TimeLine tl in timelines)
             {
                 if (tl.getSectionLine())
                 {
-                    section.Enqueue(tl);
+                    sectionCount++;
                 }
                 if (tl.getBPM() != (prev != null ? prev.getBPM() : model.getBpm()))
                 {
-                    bpm.Enqueue(tl);
+                    bpmCount++;
                 }
                 if (tl.getStop() != 0)
                 {
-                    stop.Enqueue(tl);
+                    stopCount++;
                 }
                 prev = tl;
             }
-            sections = section.ToArray();
-            bpms = bpm.ToArray();
-            stops = stop.ToArray();
+
+            sections = new TimeLine[sectionCount];
+            bpms = new TimeLine[bpmCount];
+            stops = new TimeLine[stopCount];
+
+            int sectionIndex = 0;
+            int bpmIndex = 0;
+            int stopIndex = 0;
+            prev = null;
+            foreach (TimeLine tl in timelines)
+            {
+                if (tl.getSectionLine())
+                {
+                    sections[sectionIndex] = tl;
+                    sectionIndex++;
+                }
+                if (tl.getBPM() != (prev != null ? prev.getBPM() : model.getBpm()))
+                {
+                    bpms[bpmIndex] = tl;
+                    bpmIndex++;
+                }
+                if (tl.getStop() != 0)
+                {
+                    stops[stopIndex] = tl;
+                    stopIndex++;
+                }
+                prev = tl;
+            }
         }
 
         public TimeLine[] getSections()

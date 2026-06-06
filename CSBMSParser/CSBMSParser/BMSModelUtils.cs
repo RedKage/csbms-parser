@@ -194,17 +194,30 @@ namespace CSBMSParser
 
         public static double getMaxNotesPerTime(BMSModel model, int range)
         {
+            if (range <= 0)
+            {
+                return 0;
+            }
+
             int maxnotes = 0;
             TimeLine[] tl = model.getAllTimeLines();
-            for (int i = 0; i < tl.Length; i++)
+            int lntype = model.getLntype();
+            int notes = 0;
+            int right = 0;
+
+            for (int left = 0; left < tl.Length; left++)
             {
-                int notes = 0;
-                for (int j = i; j < tl.Length && tl[j].getMilliTime() < tl[i].getMilliTime() + range; j++)
+                long end = tl[left].getMilliTime() + range;
+                while (right < tl.Length && tl[right].getMilliTime() < end)
                 {
-                    notes += tl[j].getTotalNotes(model.getLntype());
+                    notes += tl[right].getTotalNotes(lntype);
+                    right++;
                 }
+
                 maxnotes = (maxnotes < notes) ? notes : maxnotes;
+                notes -= tl[left].getTotalNotes(lntype);
             }
+
             return maxnotes;
         }
 

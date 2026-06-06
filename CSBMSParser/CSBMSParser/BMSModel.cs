@@ -560,10 +560,59 @@ namespace CSBMSParser
 
         public Lane[] getLanes()
         {
-            Lane[] lanes = new Lane[mode.key];
-            for (int i = 0; i < lanes.Length; i++)
+            int laneCount = mode.key;
+            Lane[] lanes = new Lane[laneCount];
+            int[] noteCounts = new int[laneCount];
+            int[] hiddenCounts = new int[laneCount];
+
+            foreach (TimeLine tl in timelines)
             {
-                lanes[i] = new Lane(this, i);
+                for (int lane = 0; lane < laneCount; lane++)
+                {
+                    if (tl.getNote(lane) != null)
+                    {
+                        noteCounts[lane]++;
+                    }
+                    if (tl.getHiddenNote(lane) != null)
+                    {
+                        hiddenCounts[lane]++;
+                    }
+                }
+            }
+
+            Note[][] laneNotes = new Note[laneCount][];
+            Note[][] laneHiddens = new Note[laneCount][];
+            for (int lane = 0; lane < laneCount; lane++)
+            {
+                laneNotes[lane] = new Note[noteCounts[lane]];
+                laneHiddens[lane] = new Note[hiddenCounts[lane]];
+            }
+
+            int[] noteIndexes = new int[laneCount];
+            int[] hiddenIndexes = new int[laneCount];
+            foreach (TimeLine tl in timelines)
+            {
+                for (int lane = 0; lane < laneCount; lane++)
+                {
+                    Note note = tl.getNote(lane);
+                    if (note != null)
+                    {
+                        laneNotes[lane][noteIndexes[lane]] = note;
+                        noteIndexes[lane]++;
+                    }
+
+                    Note hidden = tl.getHiddenNote(lane);
+                    if (hidden != null)
+                    {
+                        laneHiddens[lane][hiddenIndexes[lane]] = hidden;
+                        hiddenIndexes[lane]++;
+                    }
+                }
+            }
+
+            for (int lane = 0; lane < lanes.Length; lane++)
+            {
+                lanes[lane] = new Lane(laneNotes[lane], laneHiddens[lane]);
             }
             return lanes;
         }

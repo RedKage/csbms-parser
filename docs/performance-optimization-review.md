@@ -342,3 +342,94 @@ dotnet .\.verify-p0-final3\bin\CSBMSParser.Benchmark.dll --job Short --filter *B
 - BMS timeline key 仍是 `double section`，本次未改变浮点比较语义，也未修复潜在精度边界。
 - `subMap` 仍会返回新 `Dictionary`，还不是无分配 range iterator；这是后续 BMSON/LN 优化点。
 - 本次验证未覆盖 `#RANDOM` 多分支随机选择场景，也未覆盖 `bug.bms` 这种超大谱面。
+
+## P1 实施记录与基准对比
+
+本阶段只处理能用现有 BMS/BML fixture 稳定验证的 P1 项：
+
+- `BMSModelUtils.getMaxNotesPerTime`
+- `Lane` / `EventLane` 构造
+
+暂未处理：
+
+- `BMSONDecoder.decode`：当前 benchmark fixture 没有 BMSON 样本，缺少收益与行为校验基础。
+- `Logger` / `Debug.WriteLine`：benchmark 项目已使用 `SilentLogger`，解析 benchmark 不受默认控制台 logger 影响；默认 logger 行为属于外部可见行为，未在本轮修改。
+
+### 代码改动
+
+| 文件 | 改动 | 直接影响 |
+| --- | --- | --- |
+| `CSBMSParser/CSBMSParser.Benchmark/Program.cs` | 新增 `BmsP1ModelBenchmarks`，覆盖 `MaxNotesPerSecond`、`BuildLanes`、`BuildEventLane` | 能独立测量 P1 模型查询/构造 API，不把结果混进纯 decode benchmark |
+| `CSBMSParser/CSBMSParser/BMSModelUtils.cs` | `getMaxNotesPerTime` 从每个起点向后重扫改为双指针滑动窗口 | 时间复杂度从最坏 O(n^2) 降为 O(n)，保持窗口边界语义：`time < start + range` |
+| `CSBMSParser/CSBMSParser/Lane.cs` | 增加 internal array 构造器；public 构造器从 `Queue<T>` 改为计数后一次性填数组 | 减少 `Queue` 增长和 `ToArray` 复制造成的临时分配 |
+| `CSBMSParser/CSBMSParser/BMSModel.cs` | `getLanes` 改为一次性为全部 lane 统计并填充数组，再创建新的 `Lane` 对象 | 避免每个 lane 单独扫描全部 timeline；仍返回新 `Lane`，避免复用 stateful cursor |
+| `CSBMSParser/CSBMSParser/EventLane.cs` | 构造器从 3 个 `Queue<TimeLine>` 改为先计数再填 `TimeLine[]` | 降低分配；因为需要两次扫描，耗时收益依 fixture 有波动 |
+
+### Benchmark 对比
+
+Benchmark 命令：
+
+```powershell
+dotnet .\.verify-p1-before\bin\CSBMSParser.Benchmark.dll --job Short --filter *BmsP1ModelBenchmarks*
+dotnet .\.verify-p1-after\bin\CSBMSParser.Benchmark.dll --job Short --filter *BmsP1ModelBenchmarks*
+```
+
+结果来自 BenchmarkDotNet `ShortRun`，每个 case `IterationCount=3`，适合快速对比，不等价于最终发布基准。运行环境同 P0：BenchmarkDotNet 0.15.8、.NET 10.0.8、Windows 11、AMD Ryzen 7 5800X。
+
+#### `BMSModelUtils.getMaxNotesPerTime(model, 1000)`
+
+| Fixture | P1 前 Mean | P1 后 Mean | 加速比 | P1 前 Allocated | P1 后 Allocated |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `_ANOTHER.bms` | 154.653 us | 31.022 us | 4.99x | 0 B | 0 B |
+| `AF_7KSHD.bms` | 490.264 us | 72.384 us | 6.77x | 0 B | 0 B |
+| `Lapras_A.bml` | 352.210 us | 49.934 us | 7.05x | 0 B | 0 B |
+| `tetrinet_5.bms` | 172.722 us | 21.587 us | 8.00x | 0 B | 0 B |
+
+#### `BMSModel.getLanes()`
+
+| Fixture | P1 前 Mean | P1 后 Mean | 加速比 | P1 前 Allocated | P1 后 Allocated | 分配下降 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `_ANOTHER.bms` | 49.483 us | 51.315 us | 0.96x | 25064 B | 7736 B | 约 69.1% |
+| `AF_7KSHD.bms` | 201.554 us | 119.325 us | 1.69x | 63488 B | 16224 B | 约 74.4% |
+| `Lapras_A.bml` | 131.759 us | 90.420 us | 1.46x | 40192 B | 11936 B | 约 70.3% |
+| `tetrinet_5.bms` | 50.050 us | 25.030 us | 2.00x | 16600 B | 4656 B | 约 72.0% |
+
+#### `BMSModel.getEventLane()`
+
+| Fixture | P1 前 Mean | P1 后 Mean | 加速比 | P1 前 Allocated | P1 后 Allocated | 分配下降 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `_ANOTHER.bms` | 5.212 us | 6.018 us | 0.87x | 3032 B | 840 B | 约 72.3% |
+| `AF_7KSHD.bms` | 11.882 us | 9.822 us | 1.21x | 2968 B | 856 B | 约 71.2% |
+| `Lapras_A.bml` | 10.061 us | 8.683 us | 1.16x | 1792 B | 648 B | 约 63.8% |
+| `tetrinet_5.bms` | 5.046 us | 5.450 us | 0.93x | 1736 B | 592 B | 约 65.9% |
+
+结论：
+
+- `getMaxNotesPerTime` 是本轮最明确的 P1 收益点，4 个 fixture 都有 4.99x 到 8.00x 加速，且不产生分配。
+- `getLanes` 分配下降约 69% 到 74%；耗时在 3 个 fixture 上提升，`_ANOTHER.bms` 在 ShortRun 中略慢，属于需要用更长 job 复测的边界点。
+- `getEventLane` 分配下降约 64% 到 72%；耗时结果混合，小 fixture 上两次扫描成本会抵消减少分配的收益。如果调用场景以最低延迟为主，可以继续比较一遍 single-pass `List<T>` 或对象池方案。
+
+### 行为一致性验证
+
+本次用 `.verify-p1-before` 与 `.verify-p1-after` 两个构建产物做了 P1 API 摘要比对：
+
+- `getMaxNotesPerTime` 覆盖 range：`-1`、`0`、`1`、`100`、`1000`、`5000`、`int.MaxValue`。
+- `getLanes` 覆盖每个 lane 的 note/hidden note 数量、顺序、note 类型、section、micro time、wav、LN pair、mine damage。
+- `getEventLane` 覆盖 section/BPM/STOP 数量、顺序、section、micro/milli time、BPM、STOP。
+
+比对结果：
+
+| 项目 | P1 前 | P1 后 |
+| --- | --- | --- |
+| P1 API 摘要 SHA256 | `73C4DD6F9A623A1D50CC6CA3C02100A68E9E427AB883A412D8432425ACE4798C` | `73C4DD6F9A623A1D50CC6CA3C02100A68E9E427AB883A412D8432425ACE4798C` |
+| 逐行比较 | 一致 | 一致 |
+
+结论：在 4 个 benchmark BMS/BML fixture 上，本轮 P1 改动没有改变 `getMaxNotesPerTime`、`getLanes`、`getEventLane` 的可观察输出。
+
+### 影响面与副作用
+
+- `getMaxNotesPerTime` 依赖 `model.getAllTimeLines()` 按时间非降序排列；这是旧算法也隐含依赖的前提。若未来支持非时间序 timeline，需要先排序或改用独立时间索引。
+- `getLanes` 仍返回新的 `Lane[]` 与新的 `Lane` cursor 对象，没有做缓存；这是为了避免 `Lane.mark/reset/getNote/getHidden` 的内部游标状态被多次调用共享。
+- `Lane(BMSModel, int)` 单独构造现在会扫描目标 lane 两次，换取更少分配；`BMSModel.getLanes()` 已走全部 lane 一次归集路径。
+- `EventLane` 当前也是两次扫描；分配更低，但耗时不是所有 fixture 都更快。
+- 本轮未覆盖 BMSON、默认控制台 logger、`#RANDOM` 多分支和超大 `bug.bms`。

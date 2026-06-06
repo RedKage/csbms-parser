@@ -14,23 +14,51 @@ namespace CSBMSParser
         private int hiddenbasepos;
         private int hiddenseekpos;
 
+        internal Lane(Note[] notes, Note[] hiddens)
+        {
+            this.notes = notes;
+            this.hiddens = hiddens;
+        }
+
         public Lane(BMSModel model, int lane)
         {
-            var note = new Queue<Note>();
-            var hnote = new Queue<Note>();
-            foreach (TimeLine tl in model.getAllTimeLines())
+            TimeLine[] timelines = model.getAllTimeLines();
+            int noteCount = 0;
+            int hiddenCount = 0;
+
+            foreach (TimeLine tl in timelines)
             {
-                if (tl.existNote(lane))
+                if (tl.getNote(lane) != null)
                 {
-                    note.Enqueue(tl.getNote(lane));
+                    noteCount++;
                 }
                 if (tl.getHiddenNote(lane) != null)
                 {
-                    hnote.Enqueue(tl.getHiddenNote(lane));
+                    hiddenCount++;
                 }
             }
-            notes = note.ToArray();
-            hiddens = hnote.ToArray();
+
+            notes = new Note[noteCount];
+            hiddens = new Note[hiddenCount];
+
+            int noteIndex = 0;
+            int hiddenIndex = 0;
+            foreach (TimeLine tl in timelines)
+            {
+                Note note = tl.getNote(lane);
+                if (note != null)
+                {
+                    notes[noteIndex] = note;
+                    noteIndex++;
+                }
+
+                Note hidden = tl.getHiddenNote(lane);
+                if (hidden != null)
+                {
+                    hiddens[hiddenIndex] = hidden;
+                    hiddenIndex++;
+                }
+            }
         }
 
         public Note[] getNotes()
