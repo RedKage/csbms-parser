@@ -260,12 +260,12 @@ namespace CSBMSParser
         private readonly static int[] CHANNELASSIGN_BEAT7 = { 0, 1, 2, 3, 4, 7, -1, 5, 6, 8, 9, 10, 11, 12, 15, -1, 13, 14 };
         private readonly static int[] CHANNELASSIGN_POPN = { 0, 1, 2, 3, 4, -1, -1, -1, -1, -1, 5, 6, 7, 8, -1, -1, -1, -1 };
 
-        private SortedDictionary<double, TimeLineCache> tlcache;
+        private SortedList<double, TimeLineCache> tlcache;
 
         /**
          * SectionモデルからTimeLineモデルを作成し、BMSModelに登録する
          */
-        public void makeTimeLines(int[] wavmap, int[] bgamap, SortedDictionary<double, TimeLineCache> tlcache, List<LongNote>[] lnlist, LongNote[] startln)
+        public void makeTimeLines(int[] wavmap, int[] bgamap, SortedList<double, TimeLineCache> tlcache, List<LongNote>[] lnlist, LongNote[] startln)
         {
             var lnobj = model.getLnobj();
             var lnmode = model.getLnmode();

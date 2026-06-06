@@ -18,7 +18,7 @@ namespace CSBMSParser
     {
         private BMSModel model;
 
-        private Dictionary<int, TimeLineCache> tlcache = new Dictionary<int, TimeLineCache>();
+        private SortedList<int, TimeLineCache> tlcache = new SortedList<int, TimeLineCache>();
 
         public BMSONDecoder() : this(BMSModel.LNTYPE_LONGNOTE)
         {

@@ -412,7 +412,7 @@ namespace CSBMSParser
                     prev = sections[i];
                 }
 
-                var timelines = new SortedDictionary<double, TimeLineCache>();
+                var timelines = new SortedList<double, TimeLineCache>();
                 var lnlist = new List<LongNote>[model.getMode().key];
                 var lnendstatus = new LongNote[model.getMode().key];
                 var basetl = new TimeLine(0, 0, model.getMode().key);
