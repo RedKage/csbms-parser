@@ -58,6 +58,56 @@ public class BmsDecodeBenchmarks
 }
 
 [MemoryDiagnoser]
+public class BugBmsSpecialBenchmark
+{
+    private const string DefaultBugBmsPath = @"F:\badbms\ラプラス\bug.bms";
+
+    private byte[] data = Array.Empty<byte>();
+    private Encoding encoding = Encoding.UTF8;
+
+    static BugBmsSpecialBenchmark()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        Logger.Instance = SilentLogger.Shared;
+    }
+
+    [GlobalSetup]
+    public void GlobalSetup()
+    {
+        encoding = Encoding.GetEncoding("Shift-JIS");
+
+        string fixturePath = Environment.GetEnvironmentVariable("CSBMSPARSER_BUG_BMS") ?? DefaultBugBmsPath;
+        if (!File.Exists(fixturePath))
+        {
+            throw new FileNotFoundException(
+                $"Set CSBMSPARSER_BUG_BMS to the local bug.bms path, or place it at '{DefaultBugBmsPath}'.",
+                fixturePath);
+        }
+
+        data = File.ReadAllBytes(fixturePath);
+
+        BMSModel model = DecodeFixture();
+        if (model == null || model.getAllTimeLines().Length == 0)
+        {
+            throw new InvalidOperationException($"bug.bms did not decode into any timelines: {fixturePath}");
+        }
+    }
+
+    [Benchmark]
+    public int Decode()
+    {
+        BMSModel model = DecodeFixture();
+        return model.getAllTimeLines().Length;
+    }
+
+    private BMSModel DecodeFixture()
+    {
+        var decoder = new BMSDecoder();
+        return decoder.decode(data, ispms: false, random: null, encoding);
+    }
+}
+
+[MemoryDiagnoser]
 public class BmsP1ModelBenchmarks
 {
     private byte[] data = Array.Empty<byte>();

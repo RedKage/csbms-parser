@@ -222,6 +222,12 @@ namespace CSBMSParser
                             var c = line[(1)];
                             if ('0' <= c && c <= '9' && line.Length > 6)
                             {
+                                if (line[6] != ':')
+                                {
+                                    log.Add(new DecodeLog(DecodeLog.State.WARNING, "チャンネル定義形式が無効です : " + SummarizeLine(line)));
+                                    continue;
+                                }
+
                                 // line = line.toUpperCase();
                                 // 楽譜
                                 var c2 = line[(2)];
@@ -593,6 +599,17 @@ namespace CSBMSParser
             return value.IndexOf('\\') >= 0 ? value.Replace('\\', '/') : value;
         }
 
+        private static string SummarizeLine(string line)
+        {
+            const int prefixLength = 96;
+            if (line.Length <= prefixLength)
+            {
+                return line;
+            }
+
+            return line.Substring(0, prefixLength) + "... (len=" + line.Length + ")";
+        }
+
         /**
          * バイトデータを16進数文字列表現に変換する
          * 
@@ -768,20 +785,18 @@ namespace CSBMSParser
         {
             execute = (model, arg) =>
             {
-                try
+                if (arg.Length < 2)
                 {
-                    var ofs = arg.Select(x => "0123456789abcdefghijklmnopqrstuvwxyz".IndexOf(x)).ToArray();
-                    var num = 0;
-                    for (int i = 0; i < ofs.Length; i++)
-                    {
-                        num = ofs[i] * (int)Math.Pow(36, ofs.Length - i - 1) + num;
-                    }
-                    model.setLnobj(num);
+                    return new DecodeLog(DecodeLog.State.WARNING, "#LNOBJは不十分な定義です");
                 }
-                catch (FormatException)
+
+                int lnobj = ChartDecoder.parseInt36(arg[0], arg[1]);
+                if (lnobj < 0)
                 {
-                    return new DecodeLog(DecodeLog.State.WARNING, "#PLAYERに数字が定義されていません");
+                    return new DecodeLog(DecodeLog.State.WARNING, "#LNOBJに無効な値が定義されています");
                 }
+
+                model.setLnobj(lnobj);
                 return null;
             }
         };
