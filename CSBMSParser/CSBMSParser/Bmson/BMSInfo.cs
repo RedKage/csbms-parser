@@ -15,7 +15,7 @@ namespace CSBMSParser.Bmson
         public string mode_hint = "beat-7k"; // layout hints, e.g. "beat-7k",
                                              // "popn-5k", "generic-nkeys"
         public string chart_name = ""; // e.g. "HYPER", "FOUR DIMENSIONS"
-        public int judge_rank = 100; // as defined standard judge width is 100
+        public double judge_rank = 100; // as defined standard judge width is 100
         public double total = 100; // as it is.
         public double init_bpm; // as it is
         public int level; // as it is?
@@ -28,7 +28,7 @@ namespace CSBMSParser.Bmson
 
         public int ln_type;        // LN type
 
-        public int getJudgeRank()
+        public double getJudgeRank()
         {
             return judge_rank;
         }

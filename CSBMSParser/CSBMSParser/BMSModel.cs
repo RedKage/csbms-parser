@@ -60,7 +60,7 @@ namespace CSBMSParser
         /**
 		 * 判定ランク
 		 */
-        private int judgerank = 2;
+        private double judgerank = 2;
         /**
 	     * 判定ランクのタイプ
 	     */
@@ -245,12 +245,12 @@ namespace CSBMSParser
             this.playlevel = playlevel;
         }
 
-        public int getJudgerank()
+        public double getJudgerank()
         {
             return judgerank;
         }
 
-        public void setJudgerank(int judgerank)
+        public void setJudgerank(double judgerank)
         {
             this.judgerank = judgerank;
         }
